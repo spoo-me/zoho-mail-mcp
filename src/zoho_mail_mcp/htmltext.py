@@ -15,7 +15,7 @@ class _HTMLToText(HTMLParser):
         super().__init__(convert_charrefs=True)
         self._chunks: list[str] = []
         self._skip_depth = 0
-        self._hrefs: list[str] = []
+        self._anchors: list[tuple[str, int]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self._SKIP:
@@ -27,16 +27,18 @@ class _HTMLToText(HTMLParser):
         elif tag in self._BLOCK:
             self._chunks.append("\n")
         elif tag == "a":
-            self._hrefs.append(dict(attrs).get("href") or "")
+            self._anchors.append((dict(attrs).get("href") or "", len(self._chunks)))
 
     def handle_endtag(self, tag: str) -> None:
         if tag in self._SKIP:
             self._skip_depth = max(0, self._skip_depth - 1)
         elif tag in self._BLOCK:
             self._chunks.append("\n")
-        elif tag == "a" and self._hrefs:
-            href = self._hrefs.pop()
-            if href and not href.startswith(("mailto:", "#")):
+        elif tag == "a" and self._anchors:
+            href, start = self._anchors.pop()
+            anchor_text = "".join(self._chunks[start:]).strip()
+            # Skip the href when the visible link text already is the URL.
+            if href and href != anchor_text and not href.startswith(("mailto:", "#")):
                 self._chunks.append(f" <{href}>")
 
     def handle_data(self, data: str) -> None:

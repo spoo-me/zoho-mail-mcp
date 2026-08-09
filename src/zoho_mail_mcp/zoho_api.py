@@ -108,7 +108,7 @@ class ZohoClient:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
                     f"{self.acct.accounts_base}/oauth/v2/token",
-                    params={
+                    data={  # body, not query params: keeps secrets out of URL logs
                         "grant_type": "refresh_token",
                         "refresh_token": self.acct.refresh_token,
                         "client_id": self.acct.client_id,
