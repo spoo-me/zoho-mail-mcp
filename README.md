@@ -3,8 +3,51 @@
 MCP server for Zoho Mail. Read, search and (carefully) send email from Claude Code
 or any MCP client, across multiple Zoho mailboxes.
 
-Built on the **Zoho Mail REST API** with OAuth 2.0 — not IMAP/SMTP — so it works
+Built on the **Zoho Mail REST API** with OAuth 2.0, not IMAP/SMTP, so it works
 on Zoho's free-forever plan, where IMAP/POP are paid features.
+
+## Install
+
+With [uv](https://docs.astral.sh/uv/):
+
+```bash
+uvx zoho-mail-mcp setup    # interactive wizard, see below
+claude mcp add --scope user zoho-mail -- uvx zoho-mail-mcp
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/spoo-me/zoho-mail-mcp && cd zoho-mail-mcp
+uv sync
+uv run zoho-mail-mcp setup
+claude mcp add --scope user zoho-mail -- uv run --directory "$PWD" zoho-mail-mcp
+```
+
+Any other MCP client works too: run `zoho-mail-mcp` (stdio) as the command.
+
+## Setup
+
+`zoho-mail-mcp setup` walks through connecting one mailbox and is safe to re-run
+to add more mailboxes or rotate credentials:
+
+1. Asks for an account name, the mailbox address, and the data center
+   (`us`, `eu`, `in`, `au`, `jp`, `ca`, `sa`, `cn`). An account lives in exactly
+   one DC; the wizard derives all endpoints from it.
+2. Points you at the right `api-console.zoho.*` page to create a **Self Client**
+   and paste its Client ID / Client Secret.
+3. Exchanges the generated grant code for a permanent refresh token (no curl
+   involved) and verifies live API access before writing anything.
+4. Saves the account to `~/.config/zoho-mail-mcp/accounts.toml` (mode 600).
+
+A Self Client authorizes whichever user is logged in, so each mailbox needs its
+own (repeat the wizard per mailbox).
+
+Prefer doing it by hand? `zoho-mail-mcp init` writes a commented template with
+the manual steps. Secrets can come from env vars via `client_secret_env` /
+`refresh_token_env`, and `datacenter = "eu"` can be replaced by explicit
+`api_base` / `accounts_base` URLs. `zoho-mail-mcp check` re-verifies every
+account.
 
 ## Tools
 
@@ -47,59 +90,12 @@ Sending is deliberately hard to do by accident:
 3. Your MCP client's own permission prompt is the final gate. **Do not add
    `zoho_send_email` to any auto-allow list.** Keep it prompting every time.
 
-## Setup
-
-### 1. Install
-
-```bash
-cd zoho-mail-mcp
-uv sync
-```
-
-### 2. Create OAuth credentials (once per mailbox)
-
-IMAP is paid-only on Zoho, but the REST API works with a "Self Client":
-
-1. Log in to the mailbox's Zoho account and open <https://api-console.zoho.com>.
-2. **Add Client → Self Client** — note the Client ID and Client Secret.
-3. In **Generate Code**, enter the scopes
-   `ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.ALL`,
-   pick a duration, and generate the code.
-4. Exchange the code for a refresh token *within that duration*:
-
-   ```bash
-   curl -s -X POST "https://accounts.zoho.com/oauth/v2/token" \
-     -d "grant_type=authorization_code&code=<CODE>&client_id=<ID>&client_secret=<SECRET>"
-   ```
-
-   Keep the `refresh_token` from the response (it does not expire).
-
-A Self Client authorizes whichever user is logged in, so repeat this per mailbox.
-
-### 3. Configure accounts
-
-```bash
-uv run zoho-mail-mcp init   # creates ~/.config/zoho-mail-mcp/accounts.toml (chmod 600)
-```
-
-Fill in one `[accounts.<name>]` table per mailbox (email, client_id,
-client_secret, refresh_token; mark one `default = true`). Secrets can also come
-from env vars via `client_secret_env` / `refresh_token_env`.
-
-Data centers: defaults target zoho.com (US). For EU/India/etc. set `api_base`
-and `accounts_base` (e.g. `https://mail.zoho.eu`, `https://accounts.zoho.eu`).
-
-### 4. Verify and register
-
-```bash
-uv run zoho-mail-mcp check   # refreshes tokens, resolves account ids and folders
-claude mcp add --scope user zoho-mail -- uv run --directory /path/to/zoho-mail-mcp zoho-mail-mcp
-```
-
 ## Notes
 
 - Reading never marks mail as read (pass `mark_read=true` explicitly if wanted).
 - Marking read/unread is the only mailbox mutation; no delete/move/archive tools exist on purpose.
-- Zoho access tokens live ~1 hour and are cached in-process; refresh is automatic.
+- Zoho access tokens live about an hour and are cached in-process; refresh is automatic.
 - Alternative: Zoho's own hosted MCP (<https://www.zoho.com/mcp/>) covers Mail with
-  more write-actions, but has no draft-confirmation flow and one server per login.
+  more write-actions, but has no draft-confirmation flow and needs one server per login.
+
+<!-- mcp-name: io.github.spoo-me/zoho-mail-mcp -->
