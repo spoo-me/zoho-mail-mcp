@@ -162,6 +162,7 @@ class TestServerSurface:
             "zoho_get_email",
             "zoho_save_attachment",
             "zoho_mark_emails",
+            "zoho_save_to_drafts",
             "zoho_draft_email",
             "zoho_send_email",
             "zoho_discard_draft",

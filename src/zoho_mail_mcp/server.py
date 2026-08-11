@@ -535,6 +535,60 @@ async def zoho_send_email(params: SendEmailInput) -> str:
 
 
 @mcp.tool(
+    name="zoho_save_to_drafts",
+    annotations={
+        "title": "Save Draft to Zoho Drafts Folder",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def zoho_save_to_drafts(params: DraftIdInput) -> str:
+    """Copy a pending draft into the mailbox's real Drafts folder. Does NOT send.
+
+    Use this when the user wants to see, edit or send the message from the Zoho
+    web UI or their phone instead of approving a send here. The in-memory draft
+    is left intact, so zoho_send_email still works afterwards with the same
+    draft_id and confirm_token.
+
+    Note: calling this twice creates two Zoho drafts.
+
+    Reply drafts are saved standalone rather than threaded. Zoho's save-draft API
+    does support threading, but via the RFC `Message-ID` headers (inReplyTo +
+    refHeader), and the details endpoint only exposes Zoho's numeric messageId,
+    so we have nothing to populate them with. Sending via zoho_send_email still
+    threads correctly, because that goes through the reply endpoint instead.
+
+    Args:
+        params (DraftIdInput): draft_id from zoho_draft_email.
+
+    Returns:
+        str: Confirmation with the new Zoho messageId, or an error.
+    """
+    try:
+        draft = drafts.peek(params.draft_id)
+    except Exception as exc:
+        return _error(exc)
+    try:
+        acct = resolve_account(draft.account_name)
+        message_id = await ZohoClient(acct).save_draft(draft.payload)
+    except Exception as exc:
+        return _error(exc)
+    note = ""
+    if draft.reply_to_message_id:
+        note = (
+            " Note: saved standalone, not threaded onto the original — send it with "
+            "zoho_send_email instead if the thread matters."
+        )
+    return (
+        f"Saved {draft.draft_id} to the Drafts folder of {acct.email} "
+        f"(messageId {message_id}). Nothing was sent.{note} The pending draft is still "
+        f"available here if you would rather approve a send instead."
+    )
+
+
+@mcp.tool(
     name="zoho_discard_draft",
     annotations={
         "title": "Discard Draft",
