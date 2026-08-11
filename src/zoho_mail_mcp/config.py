@@ -162,7 +162,10 @@ def load_accounts() -> dict[str, Account]:
         api_base = str(raw.get("api_base", "")).rstrip("/")
         accounts_base = str(raw.get("accounts_base", "")).rstrip("/")
         if raw.get("datacenter"):
-            dc_api, dc_accounts = datacenter_bases(str(raw["datacenter"]))
+            try:
+                dc_api, dc_accounts = datacenter_bases(str(raw["datacenter"]))
+            except ConfigError as exc:
+                raise ConfigError(f"Account '{name}': {exc}") from None
             api_base = api_base or dc_api
             accounts_base = accounts_base or dc_accounts
         accounts[name] = Account(
