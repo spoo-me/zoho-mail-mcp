@@ -14,9 +14,33 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-# US data center. EU accounts use mail.zoho.eu / accounts.zoho.eu, India .in, etc.
+# Zoho data centers: short name -> domain. API, accounts and developer-console
+# hosts all derive from the domain (mail.<domain>, accounts.<domain>,
+# api-console.<domain>). An account lives in exactly one DC; using the wrong
+# one fails with invalid_client at token refresh.
+DATACENTERS = {
+    "us": "zoho.com",
+    "eu": "zoho.eu",
+    "in": "zoho.in",
+    "au": "zoho.com.au",
+    "jp": "zoho.jp",
+    "ca": "zohocloud.ca",
+    "sa": "zoho.sa",
+    "cn": "zoho.com.cn",
+}
+
 DEFAULT_API_BASE = "https://mail.zoho.com"
 DEFAULT_ACCOUNTS_BASE = "https://accounts.zoho.com"
+
+
+def datacenter_bases(datacenter: str) -> tuple[str, str]:
+    """Datacenter name -> (api_base, accounts_base)."""
+    domain = DATACENTERS.get(datacenter.strip().lower())
+    if not domain:
+        raise ConfigError(
+            f"Unknown datacenter {datacenter!r}. Known: {', '.join(DATACENTERS)}."
+        )
+    return f"https://mail.{domain}", f"https://accounts.{domain}"
 
 OAUTH_SCOPES = "ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.ALL"
 
@@ -25,7 +49,11 @@ CONFIG_TEMPLATE = f"""\
 # Each [accounts.<name>] table is one mailbox. <name> is the identifier
 # passed as the `account` argument to the MCP tools.
 #
-# Credentials come from a Zoho "Self Client" (works on free plans, unlike IMAP):
+# Easiest path: run `zoho-mail-mcp setup` instead of editing this file by
+# hand. The wizard walks through Self Client creation, exchanges the grant
+# code for a refresh token, verifies API access, and writes this file.
+#
+# Manual path: credentials come from a Zoho "Self Client" (works on free plans, unlike IMAP):
 #   1. Log in to the mailbox's Zoho account, open https://api-console.zoho.com
 #   2. Add Client -> Self Client -> note the Client ID and Client Secret.
 #   3. In the Generate Code tab, enter scopes:
@@ -40,8 +68,8 @@ CONFIG_TEMPLATE = f"""\
 # Any of client_id / client_secret / refresh_token may instead be given as
 # <field>_env = "ENV_VAR_NAME".
 #
-# Data centers: default hosts are the US DC (zoho.com). For zoho.eu / zoho.in
-# etc., set api_base and accounts_base accordingly.
+# Data centers: set `datacenter` to one of {', '.join(DATACENTERS)} (default
+# us). Explicit api_base / accounts_base settings win over `datacenter`.
 
 [accounts.main]
 email = "you@example.com"
@@ -50,8 +78,7 @@ client_secret = ""
 refresh_token = ""
 display_name = ""
 default = true
-# api_base = "{DEFAULT_API_BASE}"
-# accounts_base = "{DEFAULT_ACCOUNTS_BASE}"
+# datacenter = "us"
 
 # [accounts.support]
 # email = "support@example.com"
@@ -132,14 +159,23 @@ def load_accounts() -> dict[str, Account]:
         email_addr = raw.get("email", "")
         if "@" not in email_addr:
             raise ConfigError(f"Account '{name}': 'email' is missing or invalid.")
+        api_base = str(raw.get("api_base", "")).rstrip("/")
+        accounts_base = str(raw.get("accounts_base", "")).rstrip("/")
+        if raw.get("datacenter"):
+            try:
+                dc_api, dc_accounts = datacenter_bases(str(raw["datacenter"]))
+            except ConfigError as exc:
+                raise ConfigError(f"Account '{name}': {exc}") from None
+            api_base = api_base or dc_api
+            accounts_base = accounts_base or dc_accounts
         accounts[name] = Account(
             name=name,
             email=email_addr,
             client_id=_resolve_secret(name, raw, "client_id"),
             client_secret=_resolve_secret(name, raw, "client_secret"),
             refresh_token=_resolve_secret(name, raw, "refresh_token"),
-            api_base=raw.get("api_base", DEFAULT_API_BASE).rstrip("/"),
-            accounts_base=raw.get("accounts_base", DEFAULT_ACCOUNTS_BASE).rstrip("/"),
+            api_base=api_base or DEFAULT_API_BASE,
+            accounts_base=accounts_base or DEFAULT_ACCOUNTS_BASE,
             display_name=raw.get("display_name", ""),
             default=bool(raw.get("default", False)),
         )

@@ -1,10 +1,23 @@
 [project]
 name = "zoho-mail-mcp"
-version = "0.1.0"
-description = "MCP server for Zoho Mail: read and search mail over IMAP, send over SMTP behind a draft-and-confirm flow, multiple accounts"
+version = "0.2.0"
+description = "MCP server for Zoho Mail over its REST API (free-plan friendly): read, search and save attachments, send behind a draft-and-confirm flow, multiple accounts and data centers"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 # mcp pinned <2: the 2.0 SDK replaced FastMCP with a new MCPServer API.
 dependencies = ["mcp>=1.2.0,<2", "httpx>=0.27"]
+keywords = ["mcp", "zoho", "zoho-mail", "email", "model-context-protocol"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Communications :: Email",
+]
+
+[project.urls]
+Repository = "https://github.com/spoo-me/zoho-mail-mcp"
+Issues = "https://github.com/spoo-me/zoho-mail-mcp/issues"
 
 [project.scripts]
 zoho-mail-mcp = "zoho_mail_mcp.server:main"

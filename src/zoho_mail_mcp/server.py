@@ -684,11 +684,20 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="zoho-mail-mcp", description="Zoho Mail MCP server (stdio).")
     sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("init", help="create the accounts.toml template")
+    sub.add_parser("setup", help="interactive wizard: connect a mailbox (or rotate its credentials)")
+    sub.add_parser("init", help="create the accounts.toml template (manual alternative to setup)")
     sub.add_parser("check", help="verify OAuth credentials and API access for every account")
     args = parser.parse_args()
 
-    if args.cmd == "init":
+    if args.cmd == "setup":
+        from .setup_wizard import run_wizard
+
+        try:
+            raise SystemExit(run_wizard())
+        except KeyboardInterrupt:
+            print("\nAborted; nothing written.", file=sys.stderr)
+            raise SystemExit(130) from None
+    elif args.cmd == "init":
         try:
             path = init_config()
         except ConfigError as exc:
@@ -696,6 +705,7 @@ def main() -> None:
             raise SystemExit(1)
         print(f"Created {path} (mode 600). Follow the comments in that file to create")
         print("a Zoho Self Client per mailbox, then run 'zoho-mail-mcp check'.")
+        print("Tip: 'zoho-mail-mcp setup' does all of this interactively.")
     elif args.cmd == "check":
         raise SystemExit(_check())
     else:
