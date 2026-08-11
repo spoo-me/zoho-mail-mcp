@@ -213,6 +213,12 @@ class TestDatacenters:
         with pytest.raises(ConfigError, match="Unknown datacenter"):
             datacenter_bases("mars")
 
+    def test_unknown_datacenter_in_config_names_account(self, config_dir):
+        path = config_dir / "accounts.toml"
+        path.write_text(CONFIG.replace('default = true\n', 'default = true\ndatacenter = "mars"\n'))
+        with pytest.raises(ConfigError, match="Account 'admin':.*Unknown datacenter"):
+            load_accounts()
+
     def test_config_datacenter_field(self, config_dir):
         path = config_dir / "accounts.toml"
         path.write_text(CONFIG.replace('default = true\n', 'default = true\ndatacenter = "in"\n'))
@@ -272,6 +278,36 @@ class TestSetupWizardHelpers:
         text = upsert_account_block("", "main", render_account_block("main", {"email": "m@x.co"}))
         assert tomllib.loads(text)["accounts"]["main"]["email"] == "m@x.co"
 
+    def test_upsert_replaces_header_with_trailing_comment(self):
+        import tomllib
+
+        from zoho_mail_mcp.setup_wizard import render_account_block, upsert_account_block
+
+        original = CONFIG.replace("[accounts.admin]", "[accounts.admin]  # work mailbox")
+        block = render_account_block("admin", {"email": "admin@spoo.me", "refresh_token": "NEW"})
+        data = tomllib.loads(upsert_account_block(original, "admin", block))
+        assert data["accounts"]["admin"]["refresh_token"] == "NEW"
+
+    def test_write_account_is_0600_and_atomic(self, config_dir):
+        import stat
+
+        from zoho_mail_mcp.setup_wizard import write_account
+
+        path = write_account("support2", {"email": "s2@spoo.me", "refresh_token": "r"})
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert not list(config_dir.glob("*.tmp"))
+        text = path.read_text()
+        assert "[accounts.support2]" in text and "[accounts.admin]" in text
+
+    def test_write_account_refuses_unparseable_config(self, config_dir):
+        from zoho_mail_mcp.setup_wizard import SetupError, write_account
+
+        target = config_dir / "accounts.toml"
+        target.write_text("not [ valid toml")
+        with pytest.raises(SetupError, match="nothing was written"):
+            write_account("main", {"email": "m@x.co"})
+        assert target.read_text() == "not [ valid toml"
+
     def test_exchange_grant_code_paths(self, monkeypatch):
         import httpx
 
@@ -302,6 +338,22 @@ class TestSetupWizardHelpers:
         monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"error": "invalid_code"}))
         with pytest.raises(setup_wizard.SetupError, match="expire within minutes"):
             setup_wizard.exchange_grant_code("https://accounts.zoho.in", "id", "sec", "old")
+
+    def test_exchange_never_echoes_tokens(self, monkeypatch):
+        import httpx
+
+        from zoho_mail_mcp import setup_wizard
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {"access_token": "LIVE-BEARER-TOKEN", "expires_in": 3600}
+
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse())
+        with pytest.raises(setup_wizard.SetupError) as excinfo:
+            setup_wizard.exchange_grant_code("https://accounts.zoho.in", "id", "sec", "c")
+        assert "LIVE-BEARER-TOKEN" not in str(excinfo.value)
 
     def test_guess_datacenter(self, config_dir):
         from zoho_mail_mcp.setup_wizard import guess_datacenter

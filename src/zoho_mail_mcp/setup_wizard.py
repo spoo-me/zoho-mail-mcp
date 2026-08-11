@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import os
 import re
 import sys
 import tomllib
@@ -68,7 +69,9 @@ def exchange_grant_code(
         ) from None
     token = data.get("refresh_token")
     if not token:
-        error = data.get("error", data)
+        # Never echo the response body: a partial success may carry a live
+        # access_token even when the refresh_token is missing.
+        error = data.get("error") or "unexpected response shape (no refresh_token)"
         hint = ""
         if "invalid_code" in str(error):
             hint = (
@@ -97,9 +100,13 @@ def render_account_block(name: str, fields: dict) -> str:
 
 
 def upsert_account_block(text: str, name: str, block: str) -> str:
-    """Insert or replace one account table in the config file text."""
+    """Insert or replace one account table in the config file text.
+
+    Replacing a table consumes everything up to the next table header,
+    including comments trailing the table.
+    """
     pattern = re.compile(
-        rf"(?ms)^\[accounts\.{re.escape(name)}\][ \t]*\n.*?(?=^\[|\Z)"
+        rf"(?ms)^\[accounts\.{re.escape(name)}\][ \t]*(?:#[^\n]*)?\n.*?(?=^\[|\Z)"
     )
     if pattern.search(text):
         new_text = pattern.sub(block + "\n", text, count=1)
@@ -117,9 +124,25 @@ def upsert_account_block(text: str, name: str, block: str) -> str:
 def write_account(name: str, fields: dict) -> Path:
     path = config_path()
     text = path.read_text() if path.exists() else CONFIG_HEADER
+    try:
+        new_text = upsert_account_block(text, name, render_account_block(name, fields))
+    except tomllib.TOMLDecodeError as exc:
+        raise SetupError(
+            f"{path} would not parse after the update ({exc}); nothing was written. "
+            "Fix or remove the file and re-run setup."
+        ) from exc
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(upsert_account_block(text, name, render_account_block(name, fields)))
-    path.chmod(0o600)
+    # Atomic replace via a 0600 temp file: secrets are never world-readable
+    # (write-then-chmod would race) and a crash cannot truncate the config.
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(new_text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -160,10 +183,20 @@ def run_wizard() -> int:
         print("Error: setup is interactive; run it in a terminal.", file=sys.stderr)
         return 1
 
-    try:
-        existing = load_accounts()
-    except ConfigError:
-        existing = {}
+    # Fail fast on a config that will not parse, BEFORE the user spends a
+    # single-use grant code on it. A parseable file with incomplete accounts
+    # (e.g. the untouched init template) is fine: the upsert preserves it.
+    existing: dict[str, Account] = {}
+    if config_path().exists():
+        try:
+            existing = load_accounts()
+        except ConfigError as exc:
+            try:
+                tomllib.loads(config_path().read_text())
+            except tomllib.TOMLDecodeError:
+                print(f"Error: {exc}", file=sys.stderr)
+                print("Fix or remove the file, then re-run setup.", file=sys.stderr)
+                return 1
 
     print("zoho-mail-mcp setup: connect a Zoho mailbox over the REST API.")
     print("(Works on free-plan mailboxes; IMAP is not used.)\n")
@@ -183,10 +216,11 @@ def run_wizard() -> int:
     ):
         print("Aborted; nothing written.")
         return 1
-    email = _prompt("Mailbox address", existing[name].email if name in existing else "")
-    if "@" not in email:
-        print("Error: that is not an email address.", file=sys.stderr)
-        return 1
+    while True:
+        email = _prompt("Mailbox address", existing[name].email if name in existing else "")
+        if "@" in email:
+            break
+        print("  That is not an email address.")
 
     # 2. Data center.
     print("\nZoho data centers (an account lives in exactly one):")
@@ -267,7 +301,11 @@ def run_wizard() -> int:
         fields["display_name"] = display_name
     fields["default"] = make_default
     fields["datacenter"] = datacenter
-    path = write_account(name, fields)
+    try:
+        path = write_account(name, fields)
+    except SetupError as exc:
+        print(f"\nError: {exc}", file=sys.stderr)
+        return 1
 
     print(f"\nSaved account '{name}' to {path} (mode 600).")
     print("\nNext steps:")

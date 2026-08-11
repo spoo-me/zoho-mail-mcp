@@ -692,7 +692,11 @@ def main() -> None:
     if args.cmd == "setup":
         from .setup_wizard import run_wizard
 
-        raise SystemExit(run_wizard())
+        try:
+            raise SystemExit(run_wizard())
+        except KeyboardInterrupt:
+            print("\nAborted; nothing written.", file=sys.stderr)
+            raise SystemExit(130) from None
     elif args.cmd == "init":
         try:
             path = init_config()
