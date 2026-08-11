@@ -29,6 +29,7 @@ class Draft:
     payload: dict
     reply_to_message_id: str | None
     created_at: float
+    saved_message_id: str | None = None
 
 
 _drafts: dict[str, Draft] = {}

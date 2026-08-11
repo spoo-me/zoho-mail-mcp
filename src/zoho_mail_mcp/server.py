@@ -528,9 +528,15 @@ async def zoho_send_email(params: SendEmailInput) -> str:
     except Exception as exc:
         drafts.restore(draft)
         return _error(exc)
+    saved_note = ""
+    if draft.saved_message_id:
+        saved_note = (
+            f" The copy saved to the Drafts folder earlier (messageId "
+            f"{draft.saved_message_id}) stays there; it can be deleted in the Zoho UI."
+        )
     return (
         f"Sent {draft.draft_id} from {acct.email} to {draft.recipients_display} "
-        f"(subject: {draft.subject!r})."
+        f"(subject: {draft.subject!r}).{saved_note}"
     )
 
 
@@ -552,7 +558,8 @@ async def zoho_save_to_drafts(params: DraftIdInput) -> str:
     is left intact, so zoho_send_email still works afterwards with the same
     draft_id and confirm_token.
 
-    Note: calling this twice creates two Zoho drafts.
+    Note: calling this twice creates two Zoho drafts, and a saved copy is not
+    removed when the pending draft is later sent here.
 
     Reply drafts are saved standalone rather than threaded. Zoho's save-draft API
     does support threading, but via the RFC `Message-ID` headers (inReplyTo +
@@ -575,6 +582,7 @@ async def zoho_save_to_drafts(params: DraftIdInput) -> str:
         message_id = await ZohoClient(acct).save_draft(draft.payload)
     except Exception as exc:
         return _error(exc)
+    draft.saved_message_id = message_id
     note = ""
     if draft.reply_to_message_id:
         note = (

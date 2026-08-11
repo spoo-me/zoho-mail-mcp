@@ -352,7 +352,12 @@ class ZohoClient:
             f"/api/accounts/{account_id}/messages",
             json={**payload, "mode": "draft"},
         )
-        return str((data or {}).get("messageId", ""))
+        if not isinstance(data, dict) or not data.get("messageId"):
+            raise MailError(
+                "Save-draft returned no messageId; check the Drafts folder in the "
+                "Zoho UI before retrying, or a retry may create a duplicate."
+            )
+        return str(data["messageId"])
 
 
 def build_send_payload(

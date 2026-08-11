@@ -128,6 +128,17 @@ class TestDraftFlow:
         assert drafts.discard(draft.draft_id) is True
         assert drafts.discard(draft.draft_id) is False
 
+    def test_peek_does_not_consume(self):
+        draft = self._make_draft()
+        assert drafts.peek(draft.draft_id) is draft
+        assert drafts.take(draft.draft_id, draft.confirm_token) is draft
+
+    def test_peek_expired(self, monkeypatch):
+        draft = self._make_draft()
+        monkeypatch.setattr(drafts, "DRAFT_TTL_SECONDS", -1)
+        with pytest.raises(drafts.DraftError, match="not found or expired"):
+            drafts.peek(draft.draft_id)
+
     def test_expiry(self, monkeypatch):
         draft = self._make_draft()
         monkeypatch.setattr(drafts, "DRAFT_TTL_SECONDS", -1)
