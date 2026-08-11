@@ -339,6 +339,26 @@ class ZohoClient:
         else:
             await self._request("POST", f"/api/accounts/{account_id}/messages", json=payload)
 
+    async def save_draft(self, payload: dict) -> str:
+        """Save a composed message to the mailbox's Drafts folder without sending it.
+
+        Uses the same compose endpoint as send() with mode="draft", so the draft
+        becomes a real Zoho message you can open and edit in any Zoho client.
+        Returns the new messageId.
+        """
+        account_id = await self.account_id()
+        data = await self._request(
+            "POST",
+            f"/api/accounts/{account_id}/messages",
+            json={**payload, "mode": "draft"},
+        )
+        if not isinstance(data, dict) or not data.get("messageId"):
+            raise MailError(
+                "Save-draft returned no messageId; check the Drafts folder in the "
+                "Zoho UI before retrying, or a retry may create a duplicate."
+            )
+        return str(data["messageId"])
+
 
 def build_send_payload(
     acct: Account,

@@ -29,6 +29,7 @@ class Draft:
     payload: dict
     reply_to_message_id: str | None
     created_at: float
+    saved_message_id: str | None = None
 
 
 _drafts: dict[str, Draft] = {}
@@ -78,6 +79,18 @@ def take(draft_id: str, confirm_token: str) -> Draft:
             "preview; never guess or fabricate it."
         )
     del _drafts[draft_id]
+    return draft
+
+
+def peek(draft_id: str) -> Draft:
+    """Look up a draft without consuming it (used by non-sending operations)."""
+    _purge()
+    draft = _drafts.get(draft_id)
+    if draft is None:
+        raise DraftError(
+            f"Draft {draft_id!r} not found or expired (drafts live {DRAFT_TTL_SECONDS // 60} "
+            "minutes, in memory only). Create a new one with zoho_draft_email."
+        )
     return draft
 
 

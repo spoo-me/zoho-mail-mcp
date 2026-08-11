@@ -18,7 +18,21 @@ on Zoho's free-forever plan, where IMAP/POP are paid features.
 | `zoho_mark_emails` | Mark read/unread |
 | `zoho_draft_email` | Step 1 of sending: build a draft, get a preview + confirm token |
 | `zoho_send_email` | Step 2: send a confirmed draft (see safety model below) |
+| `zoho_save_to_drafts` | Copy a pending draft into the real Drafts folder, without sending |
 | `zoho_discard_draft` / `zoho_list_drafts` | Manage pending drafts |
+
+`zoho_draft_email` holds a draft **in memory only**, so it never appears in the
+Zoho web UI. Use `zoho_save_to_drafts` when you'd rather finish or send the
+message from Zoho on another device: it writes a real draft via the documented
+[Save Draft / Template](https://www.zoho.com/mail/help/api/post-save-draft-template.html)
+API (`mode: "draft"`) and leaves the pending draft intact, so approving a send
+here still works afterwards.
+
+Reply drafts are saved standalone. Zoho threads drafts via the RFC `Message-ID`
+headers (`inReplyTo` / `refHeader`), and the details endpoint only exposes Zoho's
+numeric `messageId`, so there is nothing to populate them with. Sending a reply
+with `zoho_send_email` still threads correctly, because that uses the reply
+endpoint.
 
 ## Safety model for sending
 
